@@ -4,13 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>谁都可以用的微缩盲道迷宫设计器</title>
+    <title>谁都可以测试的盲道桌游设计器</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
-    <h1>谁都可以用的微缩盲道迷宫设计器</h1>
+    <h1>谁都可以测试的盲道桌游设计器</h1>
     <p>使用左侧工具箱设计桌游。先用黑色摆放得分块与障碍，再设置双方棋子数量，选择颜色并放置行进盲道与提示盲道。</p>
 
     <div class="controls">
@@ -18,17 +18,7 @@
             <button id="reset-button">清空网格</button>
             <button id="restart-button">重新开始</button>
         </div>
-        <div class="control-group color-picker">
-            <span>当前颜色：</span>
-            <label><input type="radio" name="color" value="black" checked>黑色</label>
-            <label><input type="radio" name="color" value="red">红色</label>
-            <label><input type="radio" name="color" value="blue">蓝色</label>
-        </div>
-        <div class="control-group rotation-controls">
-            <button id="rotate-left" type="button">↺ 逆时针</button>
-            <span id="rotation-indicator">角度：0°</span>
-            <button id="rotate-right" type="button">顺时针 ↻</button>
-        </div>
+
     </div>
 
     <div class="inventory-panel">
@@ -62,6 +52,17 @@
     <div class="main-content">
         <div id="palette"></div>
         <div id="grid-container"></div>
+    </div>
+    <div class="control-group color-picker">
+        <span>当前颜色：</span>
+        <label><input type="radio" name="color" value="black" checked>黑色</label>
+        <label><input type="radio" name="color" value="red">红色</label>
+        <label><input type="radio" name="color" value="blue">蓝色</label>
+    </div>
+    <div class="control-group rotation-controls">
+        <button id="rotate-left" type="button">↺ 逆时针</button>
+        <span id="rotation-indicator">角度：0°</span>
+        <button id="rotate-right" type="button">顺时针 ↻</button>
     </div>
 
     <script src="script.js"></script>
