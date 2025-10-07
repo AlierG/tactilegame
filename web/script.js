@@ -1,98 +1,328 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- 配置区域 ---
     const GRID_COLS = 42;
     const GRID_ROWS = 28;
-    const NUM_STATES = 5;
+
+    const TILE_TYPES = [
+        { id: 'empty', name: '清空', label: '清', shape: [[0, 0]], category: 'basic', consumesInventory: false },
+        { id: 'obstacle', name: '障碍物', label: '障', shape: [[0, 0]], category: 'basic', consumesInventory: false },
+        { id: 'score-1', name: '1 分得分块（4 格）', label: '1分', shape: [[0, 0], [1, 0], [0, 1], [1, 1]], category: 'score', consumesInventory: false },
+        { id: 'score-2', name: '2 分得分块（2 格）', label: '2分', shape: [[0, 0], [1, 0]], category: 'score', consumesInventory: false },
+        { id: 'score-3', name: '3 分得分块（2 格）', label: '3分', shape: [[0, 0], [1, 0]], category: 'score', consumesInventory: false },
+        { id: 'score-4', name: '4 分得分块（1 格）', label: '4分', shape: [[0, 0]], category: 'score', consumesInventory: false },
+        { id: 'score-5', name: '5 分得分块（1 格）', label: '5分', shape: [[0, 0]], category: 'score', consumesInventory: false },
+        { id: 'walkway-1', name: '行进盲道（1 格）', label: '行1', shape: [[0, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-1' },
+        { id: 'walkway-2', name: '行进盲道（2 格）', label: '行2', shape: [[0, 0], [1, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-2' },
+        { id: 'walkway-3', name: '行进盲道（3 格）', label: '行3', shape: [[0, 0], [1, 0], [2, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-3' },
+        { id: 'hint-corner', name: '提示盲道（折角，3 格）', label: '折', shape: [[0, 0], [1, 0], [0, 1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-corner' },
+        { id: 'hint-t', name: '提示盲道（T 型，4 格）', label: 'T', shape: [[0, 0], [-1, 0], [1, 0], [0, 1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-t' },
+        { id: 'hint-x', name: '提示盲道（X 型，5 格）', label: 'X', shape: [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-x' },
+    ];
+
+    const CATEGORIES = [
+        { id: 'basic', title: '基础工具' },
+        { id: 'score', title: '得分块' },
+        { id: 'walkway', title: '行进盲道' },
+        { id: 'hint', title: '提示盲道' },
+    ];
+
+    const INVENTORY_KEYS = ['walkway-1', 'walkway-2', 'walkway-3', 'hint-corner', 'hint-t', 'hint-x'];
 
     // --- 全局变量 ---
-    let selectedState = 1; // 默认选中的状态 (1: 斜线)
+    let selectedTileId = 'score-1';
+    let currentRotation = 0; // 以度数表示
+    let currentColor = 'black';
+    let inventoryEnabled = false;
+    let inventory = createEmptyInventory();
 
     // --- 获取 DOM 元素 ---
     const gridContainer = document.getElementById('grid-container');
     const paletteContainer = document.getElementById('palette');
     const resetButton = document.getElementById('reset-button');
+    const restartButton = document.getElementById('restart-button');
+    const rotationIndicator = document.getElementById('rotation-indicator');
+    const rotateLeftButton = document.getElementById('rotate-left');
+    const rotateRightButton = document.getElementById('rotate-right');
+    const inventoryForm = document.getElementById('inventory-form');
+    const inventoryDisplay = document.getElementById('inventory-display');
+
+    // --- 初始化 ---
+    createPalette();
+    createGrid();
+    updateRotationIndicator();
+    updateInventoryDisplay();
+
+    // --- 事件绑定 ---
+    resetButton.addEventListener('click', () => resetGrid());
+    restartButton.addEventListener('click', () => restartGame());
+    rotateLeftButton.addEventListener('click', () => rotate(-90));
+    rotateRightButton.addEventListener('click', () => rotate(90));
+
+    document.querySelectorAll('input[name="color"]').forEach(radio => {
+        radio.addEventListener('change', event => {
+            currentColor = event.target.value;
+        });
+    });
+
+    inventoryForm.addEventListener('submit', event => {
+        event.preventDefault();
+        applyInventorySettings(new FormData(inventoryForm));
+    });
 
     // --- 函数定义 ---
 
-    /**
-     * 创建左侧的调色板
-     */
     function createPalette() {
-        for (let i = 0; i < NUM_STATES; i++) {
-            const paletteCell = document.createElement('div');
-            paletteCell.classList.add('palette-cell', `state-${i}`);
-            paletteCell.dataset.state = i;
+        paletteContainer.innerHTML = '';
+        CATEGORIES.forEach(category => {
+            const section = document.createElement('div');
+            section.classList.add('palette-section');
 
-            // 默认选中第一个非空格的状态
-            if (i === selectedState) {
-                paletteCell.classList.add('selected');
-            }
+            const title = document.createElement('h3');
+            title.textContent = category.title;
+            section.appendChild(title);
 
-            paletteCell.addEventListener('click', handlePaletteClick);
-            paletteContainer.appendChild(paletteCell);
-        }
-    }
+            const grid = document.createElement('div');
+            grid.classList.add('palette-grid');
 
-    /**
-     * 创建并初始化网格
-     */
-    function createGrid() {
-        gridContainer.innerHTML = ''; // 清空现有网格
-        for (let i = 0; i < GRID_ROWS * GRID_COLS; i++) {
-            const cell = document.createElement('div');
-            cell.classList.add('grid-cell', 'state-0'); // 所有格子默认是状态0 (空白)
-            cell.dataset.state = 0;
-            cell.addEventListener('click', handleCellClick);
-            gridContainer.appendChild(cell);
-        }
-    }
+            TILE_TYPES.filter(tile => tile.category === category.id).forEach(tile => {
+                const cell = document.createElement('div');
+                cell.classList.add('palette-cell', `tile-${tile.id}`, 'color-black');
+                cell.dataset.tileId = tile.id;
+                cell.dataset.label = tile.label;
+                cell.title = tile.name;
+                if (tile.id === selectedTileId) {
+                    cell.classList.add('selected');
+                }
+                cell.addEventListener('click', () => handlePaletteSelection(cell));
+                grid.appendChild(cell);
+            });
 
-    /**
-     * 处理调色板点击事件
-     * @param {MouseEvent} event 
-     */
-    function handlePaletteClick(event) {
-        // 更新全局选中的状态
-        selectedState = parseInt(event.target.dataset.state, 10);
-
-        // 更新调色板的视觉效果
-        document.querySelectorAll('.palette-cell').forEach(cell => {
-            cell.classList.remove('selected');
+            section.appendChild(grid);
+            paletteContainer.appendChild(section);
         });
-        event.target.classList.add('selected');
     }
 
-    /**
-     * 处理网格单元格点击事件
-     * @param {MouseEvent} event 
-     */
-    function handleCellClick(event) {
-        const cell = event.target;
-        const currentState = parseInt(cell.dataset.state, 10);
-
-        // 移除旧的状态
-        cell.classList.remove(`state-${currentState}`);
-
-        // 应用当前在调色板中选中的状态
-        cell.classList.add(`state-${selectedState}`);
-        cell.dataset.state = selectedState;
-    }
-
-    /**
-     * 清空网格状态并重置
-     */
-    function resetGrid() {
-        if (confirm('确定要清空所有格子的状态吗？这个操作无法撤销。')) {
-            // 只需重新创建一遍网格即可
-            createGrid();
-            alert('网格已重置。');
+    function createGrid() {
+        gridContainer.innerHTML = '';
+        for (let row = 0; row < GRID_ROWS; row++) {
+            for (let col = 0; col < GRID_COLS; col++) {
+                const cell = document.createElement('div');
+                cell.classList.add('grid-cell', 'tile-empty', 'color-black');
+                cell.dataset.row = row;
+                cell.dataset.col = col;
+                cell.dataset.tileId = 'empty';
+                cell.dataset.color = 'black';
+                cell.addEventListener('click', handleCellClick);
+                gridContainer.appendChild(cell);
+            }
         }
     }
 
-    // --- 事件监听 ---
-    resetButton.addEventListener('click', resetGrid);
+    function handlePaletteSelection(cell) {
+        selectedTileId = cell.dataset.tileId;
+        document.querySelectorAll('.palette-cell').forEach(paletteCell => {
+            paletteCell.classList.remove('selected');
+        });
+        cell.classList.add('selected');
+    }
 
-    // --- 初始加载 ---
-    createPalette(); // 先创建调色板
-    createGrid();    // 再创建网格
+    function handleCellClick(event) {
+        const cell = event.currentTarget;
+        const tile = TILE_TYPES.find(t => t.id === selectedTileId);
+        if (!tile) return;
+
+        const baseRow = parseInt(cell.dataset.row, 10);
+        const baseCol = parseInt(cell.dataset.col, 10);
+
+        if (!canPlaceTile(tile, baseRow, baseCol)) {
+            alert('该位置无法完整放下当前棋子，请选择其他格子或旋转后再试。');
+            return;
+        }
+
+        if (!consumeInventoryIfNeeded(tile)) {
+            return;
+        }
+
+        applyTile(tile, baseRow, baseCol);
+        checkGameEnd();
+    }
+
+    function rotate(delta) {
+        currentRotation = (currentRotation + delta) % 360;
+        if (currentRotation < 0) {
+            currentRotation += 360;
+        }
+        updateRotationIndicator();
+    }
+
+    function updateRotationIndicator() {
+        rotationIndicator.textContent = `角度：${currentRotation}°`;
+    }
+
+    function resetGrid(skipConfirm = false) {
+        if (!skipConfirm && !confirm('确定要清空整个网格吗？')) {
+            return;
+        }
+        Array.from(gridContainer.children).forEach(cell => {
+            setCellState(cell, 'empty', 'black');
+        });
+    }
+
+    function restartGame() {
+        if (!confirm('重新开始会清空网格并重置棋子数量，确定吗？')) {
+            return;
+        }
+        inventoryForm.reset();
+        inventoryEnabled = false;
+        inventory = createEmptyInventory();
+        updateInventoryDisplay();
+        currentColor = 'black';
+        document.querySelector('input[name="color"][value="black"]').checked = true;
+        currentRotation = 0;
+        updateRotationIndicator();
+        document.querySelectorAll('.palette-cell').forEach(cell => cell.classList.remove('selected'));
+        selectedTileId = 'score-1';
+        const defaultSelected = document.querySelector('.palette-cell[data-tile-id="score-1"]');
+        if (defaultSelected) {
+            defaultSelected.classList.add('selected');
+        }
+        resetGrid(true);
+    }
+
+    function applyInventorySettings(formData) {
+        const newInventory = createEmptyInventory();
+        ['red', 'blue'].forEach(color => {
+            INVENTORY_KEYS.forEach(key => {
+                const formKey = `${color}-${key}`;
+                const value = parseInt(formData.get(formKey), 10);
+                newInventory[color][key] = Number.isFinite(value) && value >= 0 ? value : 0;
+            });
+        });
+        inventory = newInventory;
+        inventoryEnabled = true;
+        updateInventoryDisplay();
+        alert('棋子数量已设置，游戏开始！');
+    }
+
+    function updateInventoryDisplay() {
+        if (!inventoryEnabled) {
+            inventoryDisplay.innerHTML = '<p>请设置红蓝双方的棋子数量以开始游戏。</p>';
+            return;
+        }
+
+        const rows = INVENTORY_KEYS.map(key => {
+            const name = getInventoryName(key);
+            return `<tr><td>${name}</td><td>${inventory.red[key]}</td><td>${inventory.blue[key]}</td></tr>`;
+        }).join('');
+
+        inventoryDisplay.innerHTML = `
+            <table>
+                <thead>
+                    <tr><th>棋子</th><th>红方剩余</th><th>蓝方剩余</th></tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        `;
+    }
+
+    function getInventoryName(key) {
+        switch (key) {
+            case 'walkway-1': return '行进盲道（1 格）';
+            case 'walkway-2': return '行进盲道（2 格）';
+            case 'walkway-3': return '行进盲道（3 格）';
+            case 'hint-corner': return '提示盲道（折角）';
+            case 'hint-t': return '提示盲道（T 型）';
+            case 'hint-x': return '提示盲道（X 型）';
+            default: return key;
+        }
+    }
+
+    function createEmptyInventory() {
+        const result = { red: {}, blue: {} };
+        ['red', 'blue'].forEach(color => {
+            INVENTORY_KEYS.forEach(key => {
+                result[color][key] = 0;
+            });
+        });
+        return result;
+    }
+
+    function canPlaceTile(tile, baseRow, baseCol) {
+        const offsets = getRotatedOffsets(tile.shape);
+        return offsets.every(([dx, dy]) => {
+            const targetCol = baseCol + dx;
+            const targetRow = baseRow + dy;
+            return targetCol >= 0 && targetCol < GRID_COLS && targetRow >= 0 && targetRow < GRID_ROWS;
+        });
+    }
+
+    function consumeInventoryIfNeeded(tile) {
+        if (!tile.consumesInventory || currentColor === 'black') {
+            return true;
+        }
+        if (!inventoryEnabled) {
+            return true;
+        }
+        const remaining = inventory[currentColor][tile.inventoryKey];
+        if (remaining <= 0) {
+            alert(`${currentColor === 'red' ? '红方' : '蓝方'}的该类型棋子已用完。`);
+            return false;
+        }
+        inventory[currentColor][tile.inventoryKey] -= 1;
+        updateInventoryDisplay();
+        return true;
+    }
+
+    function applyTile(tile, baseRow, baseCol) {
+        const offsets = getRotatedOffsets(tile.shape);
+        const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
+
+        const cells = offsets.map(([dx, dy]) => {
+            const targetCol = baseCol + dx;
+            const targetRow = baseRow + dy;
+            const index = targetRow * GRID_COLS + targetCol;
+            return gridContainer.children[index];
+        });
+
+        cells.forEach(cell => setCellState(cell, tile.id, colorToApply));
+    }
+
+    function setCellState(cell, tileId, color) {
+        cell.className = 'grid-cell';
+        cell.classList.add(`tile-${tileId}`, `color-${color}`);
+        cell.dataset.tileId = tileId;
+        cell.dataset.color = color;
+    }
+
+    function getRotatedOffsets(shape) {
+        const normalizedRotation = ((currentRotation % 360) + 360) % 360;
+        return shape.map(([x, y]) => {
+            switch (normalizedRotation) {
+                case 90:
+                    return [y, -x];
+                case 180:
+                    return [-x, -y];
+                case 270:
+                    return [-y, x];
+                default:
+                    return [x, y];
+            }
+        });
+    }
+
+    function checkGameEnd() {
+        if (!inventoryEnabled) {
+            return;
+        }
+        const redRemaining = sumInventory(inventory.red);
+        const blueRemaining = sumInventory(inventory.blue);
+        if (redRemaining === 0 && blueRemaining === 0) {
+            alert('所有棋子已放完，游戏结束！可以重新开始或调整配置。');
+        }
+    }
+
+    function sumInventory(store) {
+        return Object.values(store).reduce((sum, value) => sum + value, 0);
+    }
 });
