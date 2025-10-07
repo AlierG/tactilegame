@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const TILE_TYPES = [
         { id: 'empty', name: '清空', label: '清', shape: [[0, 0]], category: 'basic', consumesInventory: false },
         { id: 'obstacle', name: '障碍物', label: '障', shape: [[0, 0]], category: 'basic', consumesInventory: false },
+        { id: 'walkway-basic', name: '基础行进盲道（1 格）', label: '补行', shape: [[0, 0]], category: 'basic', consumesInventory: false },
+        { id: 'hint-basic', name: '基础提示盲道（1 格）', label: '补提', shape: [[0, 0]], category: 'basic', consumesInventory: false },
         { id: 'score-1', name: '1 分得分块（4 格）', label: '1分', shape: [[0, 0], [1, 0], [0, 1], [1, 1]], category: 'score', consumesInventory: false },
         { id: 'score-2', name: '2 分得分块（2 格）', label: '2分', shape: [[0, 0], [1, 0]], category: 'score', consumesInventory: false },
         { id: 'score-3', name: '3 分得分块（2 格）', label: '3分', shape: [[0, 0], [1, 0]], category: 'score', consumesInventory: false },
@@ -33,6 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentColor = 'black';
     let inventoryEnabled = false;
     let inventory = createEmptyInventory();
+    let gridCells = [];
+    let previewLayer = null;
+    let lastHoveredCell = null;
 
     // --- 获取 DOM 元素 ---
     const gridContainer = document.getElementById('grid-container');
@@ -48,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 初始化 ---
     createPalette();
     createGrid();
+    initializePreviewLayer();
     updateRotationIndicator();
     updateInventoryDisplay();
 
@@ -60,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="color"]').forEach(radio => {
         radio.addEventListener('change', event => {
             currentColor = event.target.value;
+            refreshPreview();
         });
     });
 
@@ -103,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createGrid() {
         gridContainer.innerHTML = '';
+        gridCells = [];
         for (let row = 0; row < GRID_ROWS; row++) {
             for (let col = 0; col < GRID_COLS; col++) {
                 const cell = document.createElement('div');
@@ -113,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 cell.dataset.color = 'black';
                 cell.addEventListener('click', handleCellClick);
                 gridContainer.appendChild(cell);
+                gridCells.push(cell);
             }
         }
     }
@@ -123,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             paletteCell.classList.remove('selected');
         });
         cell.classList.add('selected');
+        refreshPreview();
     }
 
     function handleCellClick(event) {
@@ -144,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         applyTile(tile, baseRow, baseCol);
         checkGameEnd();
+        refreshPreview();
     }
 
     function rotate(delta) {
@@ -152,17 +163,86 @@ document.addEventListener('DOMContentLoaded', () => {
             currentRotation += 360;
         }
         updateRotationIndicator();
+        refreshPreview();
     }
 
     function updateRotationIndicator() {
         rotationIndicator.textContent = `角度：${currentRotation}°`;
     }
 
+    function initializePreviewLayer() {
+        previewLayer = document.createElement('div');
+        previewLayer.id = 'preview-layer';
+        gridContainer.appendChild(previewLayer);
+        gridContainer.addEventListener('mousemove', handleGridMouseMove);
+        gridContainer.addEventListener('mouseleave', hidePreview);
+    }
+
+    function handleGridMouseMove(event) {
+        if (!previewLayer) return;
+        const cell = event.target.closest('.grid-cell');
+        if (!cell || !cell.dataset.row || !cell.dataset.col) {
+            hidePreview();
+            return;
+        }
+        lastHoveredCell = cell;
+        updatePreview(cell);
+    }
+
+    function updatePreview(cell) {
+        if (!previewLayer) return;
+        const tile = TILE_TYPES.find(t => t.id === selectedTileId);
+        if (!tile) {
+            hidePreview();
+            return;
+        }
+
+        const baseRow = parseInt(cell.dataset.row, 10);
+        const baseCol = parseInt(cell.dataset.col, 10);
+        const offsets = getRotatedOffsets(tile.shape);
+        const cellWidth = cell.offsetWidth;
+        const cellHeight = cell.offsetHeight;
+        const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
+        const canPlace = canPlaceTile(tile, baseRow, baseCol);
+
+        previewLayer.innerHTML = '';
+        offsets.forEach(([dx, dy]) => {
+            const previewCell = document.createElement('div');
+            previewCell.classList.add('preview-cell', `tile-${tile.id}`, `color-${colorToApply}`);
+            if (dx === 0 && dy === 0) {
+                previewCell.classList.add('preview-anchor');
+            }
+            const targetCol = baseCol + dx;
+            const targetRow = baseRow + dy;
+            previewCell.style.width = `${cellWidth}px`;
+            previewCell.style.height = `${cellHeight}px`;
+            previewCell.style.left = `${targetCol * cellWidth}px`;
+            previewCell.style.top = `${targetRow * cellHeight}px`;
+            previewLayer.appendChild(previewCell);
+        });
+
+        previewLayer.classList.add('visible');
+        previewLayer.classList.toggle('preview-invalid', !canPlace);
+    }
+
+    function hidePreview() {
+        if (!previewLayer) return;
+        previewLayer.classList.remove('visible', 'preview-invalid');
+        previewLayer.innerHTML = '';
+        lastHoveredCell = null;
+    }
+
+    function refreshPreview() {
+        if (lastHoveredCell) {
+            updatePreview(lastHoveredCell);
+        }
+    }
+
     function resetGrid(skipConfirm = false) {
         if (!skipConfirm && !confirm('确定要清空整个网格吗？')) {
             return;
         }
-        Array.from(gridContainer.children).forEach(cell => {
+        gridCells.forEach(cell => {
             setCellState(cell, 'empty', 'black');
         });
     }
@@ -186,6 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
             defaultSelected.classList.add('selected');
         }
         resetGrid(true);
+        refreshPreview();
     }
 
     function applyInventorySettings(formData) {
@@ -282,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetCol = baseCol + dx;
             const targetRow = baseRow + dy;
             const index = targetRow * GRID_COLS + targetCol;
-            return gridContainer.children[index];
+            return gridCells[index];
         });
 
         cells.forEach(cell => setCellState(cell, tile.id, colorToApply));
