@@ -203,6 +203,7 @@ button:hover {
     grid-template-columns: repeat(42, 1fr);
     grid-template-rows: repeat(28, 1fr);
     border: 2px solid #555;
+    position: relative;
 }
 
 /* 单个网格单元 */
@@ -214,7 +215,8 @@ button:hover {
     --tile-color: transparent;
 }
 
-.grid-cell::after {
+.grid-cell::after,
+.preview-cell::after {
     content: '';
     position: absolute;
     inset: 2px;
@@ -226,9 +228,50 @@ button:hover {
     transition: opacity 0.2s ease;
 }
 
+#preview-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.08s ease;
+}
+
+#preview-layer.visible {
+    opacity: 1;
+}
+
+#preview-layer.preview-invalid .preview-cell::after {
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.75) inset;
+}
+
+.preview-cell {
+    position: absolute;
+    pointer-events: none;
+    --tile-color: transparent;
+    display: block;
+}
+
+.preview-cell::after {
+    opacity: 0.7;
+}
+
+.preview-cell.preview-anchor::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40%;
+    height: 40%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    transform: translate(-50%, -50%);
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
+}
+
 /* 颜色设置 */
 .color-black {
-    --tile-color: #1f1f1f;
+    --tile-color: #848080;
 }
 
 .color-red {
@@ -240,8 +283,13 @@ button:hover {
 }
 
 /* 基础工具 */
-.tile-empty::after {
+.grid-cell.tile-empty::after {
     opacity: 0;
+}
+
+.preview-cell.tile-empty::after {
+    opacity: 0.2;
+    background-color: rgba(0, 0, 0, 0.25);
 }
 
 .tile-obstacle::after {
@@ -266,8 +314,7 @@ button:hover {
 
 /* 提示盲道采用同心纹理 */
 [class*="tile-hint"]::after {
-    background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.5), transparent 55%),
-        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.25) 0 6px, transparent 6px 12px);
+    background-image: url('tackle_alert.png');
     background-color: var(--tile-color);
 }
 
