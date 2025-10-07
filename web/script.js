@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let gridCells = [];
     let previewLayer = null;
     let lastHoveredCell = null;
+    let socket = null;
+    let roomId = null;
+    let connectionStatusLabel = null;
 
     // --- 获取 DOM 元素 ---
     const gridContainer = document.getElementById('grid-container');
@@ -49,6 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const rotateRightButton = document.getElementById('rotate-right');
     const inventoryForm = document.getElementById('inventory-form');
     const inventoryDisplay = document.getElementById('inventory-display');
+    const roomForm = document.getElementById('room-form');
+    const roomCodeInput = document.getElementById('room-code');
+    connectionStatusLabel = document.getElementById('connection-status');
 
     // --- 初始化 ---
     createPalette();
@@ -74,6 +80,15 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         applyInventorySettings(new FormData(inventoryForm));
     });
+
+    if (roomForm) {
+        if (typeof io === 'undefined') {
+            updateConnectionStatus('实时协作服务未连接');
+        }
+        roomForm.addEventListener('submit', handleRoomFormSubmit);
+    } else if (connectionStatusLabel) {
+        connectionStatusLabel.textContent = '实时协作不可用';
+    }
 
     // --- 函数定义 ---
 
@@ -142,8 +157,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const baseRow = parseInt(cell.dataset.row, 10);
         const baseCol = parseInt(cell.dataset.col, 10);
+        const rotation = getNormalizedRotation();
+        const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
 
-        if (!canPlaceTile(tile, baseRow, baseCol)) {
+        if (!canPlaceTile(tile, baseRow, baseCol, rotation)) {
             alert('该位置无法完整放下当前棋子，请选择其他格子或旋转后再试。');
             return;
         }
@@ -152,7 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        applyTile(tile, baseRow, baseCol);
+        applyTile(tile, baseRow, baseCol, { rotation, color: colorToApply });
+        broadcastTilePlacement(tile, baseRow, baseCol, rotation, colorToApply);
         checkGameEnd();
         refreshPreview();
     }
@@ -199,11 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const baseRow = parseInt(cell.dataset.row, 10);
         const baseCol = parseInt(cell.dataset.col, 10);
-        const offsets = getRotatedOffsets(tile.shape);
+        const rotation = getNormalizedRotation();
+        const offsets = getRotatedOffsets(tile.shape, rotation);
         const cellWidth = cell.offsetWidth;
         const cellHeight = cell.offsetHeight;
         const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
-        const canPlace = canPlaceTile(tile, baseRow, baseCol);
+        const canPlace = canPlaceTile(tile, baseRow, baseCol, rotation);
 
         previewLayer.innerHTML = '';
         offsets.forEach(([dx, dy]) => {
@@ -238,17 +257,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function resetGrid(skipConfirm = false) {
+    function resetGrid(skipConfirm = false, options = {}) {
+        const { broadcast = true } = options;
         if (!skipConfirm && !confirm('确定要清空整个网格吗？')) {
             return;
         }
         gridCells.forEach(cell => {
             setCellState(cell, 'empty', 'black');
         });
+        if (broadcast) {
+            broadcastGridReset();
+        }
     }
 
-    function restartGame() {
-        if (!confirm('重新开始会清空网格并重置棋子数量，确定吗？')) {
+    function restartGame(options = {}) {
+        const { showConfirm = true, broadcast = true } = options;
+        if (showConfirm && !confirm('重新开始会清空网格并重置棋子数量，确定吗？')) {
             return;
         }
         inventoryForm.reset();
@@ -265,11 +289,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (defaultSelected) {
             defaultSelected.classList.add('selected');
         }
-        resetGrid(true);
+        resetGrid(true, { broadcast: false });
         refreshPreview();
+        if (broadcast) {
+            broadcastGameRestart();
+        }
     }
 
-    function applyInventorySettings(formData) {
+    function applyInventorySettings(formData, options = {}) {
+        const { showAlert = true, broadcast = true } = options;
         const newInventory = createEmptyInventory();
         ['red', 'blue'].forEach(color => {
             INVENTORY_KEYS.forEach(key => {
@@ -281,7 +309,12 @@ document.addEventListener('DOMContentLoaded', () => {
         inventory = newInventory;
         inventoryEnabled = true;
         updateInventoryDisplay();
-        alert('棋子数量已设置，游戏开始！');
+        if (broadcast) {
+            broadcastInventoryUpdate();
+        }
+        if (showAlert) {
+            alert('棋子数量已设置，游戏开始！');
+        }
     }
 
     function updateInventoryDisplay() {
@@ -329,8 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return result;
     }
 
-    function canPlaceTile(tile, baseRow, baseCol) {
-        const offsets = getRotatedOffsets(tile.shape);
+    function canPlaceTile(tile, baseRow, baseCol, rotation = currentRotation) {
+        const offsets = getRotatedOffsets(tile.shape, rotation);
         return offsets.every(([dx, dy]) => {
             const targetCol = baseCol + dx;
             const targetRow = baseRow + dy;
@@ -355,9 +388,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
-    function applyTile(tile, baseRow, baseCol) {
-        const offsets = getRotatedOffsets(tile.shape);
-        const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
+    function applyTile(tile, baseRow, baseCol, options = {}) {
+        const { rotation = currentRotation, color = currentColor } = options;
+        const offsets = getRotatedOffsets(tile.shape, rotation);
+        const colorToApply = tile.id === 'empty' ? 'black' : color;
 
         const cells = offsets.map(([dx, dy]) => {
             const targetCol = baseCol + dx;
@@ -376,8 +410,8 @@ document.addEventListener('DOMContentLoaded', () => {
         cell.dataset.color = color;
     }
 
-    function getRotatedOffsets(shape) {
-        const normalizedRotation = ((currentRotation % 360) + 360) % 360;
+    function getRotatedOffsets(shape, rotation = currentRotation) {
+        const normalizedRotation = getNormalizedRotation(rotation);
         return shape.map(([x, y]) => {
             switch (normalizedRotation) {
                 case 90:
@@ -389,6 +423,214 @@ document.addEventListener('DOMContentLoaded', () => {
                 default:
                     return [x, y];
             }
+        });
+    }
+
+    function getNormalizedRotation(rotation = currentRotation) {
+        let normalizedRotation = rotation % 360;
+        if (normalizedRotation < 0) {
+            normalizedRotation += 360;
+        }
+        return normalizedRotation;
+    }
+
+    function broadcastTilePlacement(tile, baseRow, baseCol, rotation, color) {
+        if (!shouldBroadcast()) {
+            return;
+        }
+        const offsets = getRotatedOffsets(tile.shape, rotation);
+        const colorToApply = tile.id === 'empty' ? 'black' : color;
+        const cells = offsets.map(([dx, dy]) => ({
+            row: baseRow + dy,
+            col: baseCol + dx,
+            tileId: tile.id,
+            color: colorToApply,
+        }));
+        socket.emit('placeTile', {
+            roomId,
+            cells,
+            inventory: cloneInventoryState(inventory),
+            inventoryEnabled,
+        });
+    }
+
+    function broadcastGridReset() {
+        if (!shouldBroadcast()) {
+            return;
+        }
+        socket.emit('resetGrid', { roomId });
+    }
+
+    function broadcastGameRestart() {
+        if (!shouldBroadcast()) {
+            return;
+        }
+        socket.emit('restartGame', {
+            roomId,
+            inventory: cloneInventoryState(inventory),
+            inventoryEnabled,
+        });
+    }
+
+    function broadcastInventoryUpdate() {
+        if (!shouldBroadcast()) {
+            return;
+        }
+        socket.emit('inventoryUpdate', {
+            roomId,
+            inventory: cloneInventoryState(inventory),
+            inventoryEnabled,
+        });
+    }
+
+    function shouldBroadcast() {
+        return Boolean(socket && roomId);
+    }
+
+    function cloneInventoryState(source) {
+        return JSON.parse(JSON.stringify(source || createEmptyInventory()));
+    }
+
+    function handleRoomFormSubmit(event) {
+        event.preventDefault();
+        if (!roomCodeInput) {
+            return;
+        }
+        const code = roomCodeInput.value.trim();
+        if (!code) {
+            alert('请输入房间号。');
+            return;
+        }
+        connectToRoom(code);
+    }
+
+    function connectToRoom(code) {
+        if (!socket) {
+            if (typeof io === 'undefined') {
+                alert('实时协作不可用，请先启动服务器。');
+                updateConnectionStatus('实时协作不可用');
+                return;
+            }
+            socket = io();
+            registerSocketEvents();
+        }
+        roomId = code;
+        updateConnectionStatus(`正在加入房间 ${code}...`);
+        socket.emit('joinRoom', { roomId: code });
+    }
+
+    function registerSocketEvents() {
+        if (!socket) {
+            return;
+        }
+        socket.on('connect', () => {
+            updateConnectionStatus('已连接至服务器');
+            if (roomId) {
+                socket.emit('joinRoom', { roomId });
+            }
+        });
+        socket.on('disconnect', () => {
+            updateConnectionStatus('连接已断开');
+        });
+        socket.on('connect_error', () => {
+            updateConnectionStatus('连接失败');
+        });
+        socket.on('roomState', state => {
+            applyRemoteState(state);
+            if (roomId) {
+                updateConnectionStatus(`已加入房间 ${roomId}`);
+            }
+        });
+        socket.on('tilePlaced', handleRemoteTilePlacement);
+        socket.on('gridReset', handleRemoteReset);
+        socket.on('gameRestarted', handleRemoteRestart);
+        socket.on('inventoryUpdated', handleRemoteInventoryUpdate);
+    }
+
+    function updateConnectionStatus(message) {
+        if (connectionStatusLabel) {
+            connectionStatusLabel.textContent = message;
+        }
+    }
+
+    function applyRemoteState(state) {
+        if (!state) {
+            return;
+        }
+        if (Array.isArray(state.grid)) {
+            applyCells(state.grid);
+        }
+        if (typeof state.inventoryEnabled === 'boolean') {
+            setInventoryState(state.inventory, state.inventoryEnabled);
+        }
+        refreshPreview();
+    }
+
+    function applyCells(cells = []) {
+        cells.forEach(cellData => {
+            const { row, col, tileId, color } = cellData;
+            if (typeof row !== 'number' || typeof col !== 'number') {
+                return;
+            }
+            const index = row * GRID_COLS + col;
+            const targetCell = gridCells[index];
+            if (targetCell) {
+                setCellState(targetCell, tileId || 'empty', color || 'black');
+            }
+        });
+    }
+
+    function handleRemoteTilePlacement(data) {
+        if (!data || !Array.isArray(data.cells)) {
+            return;
+        }
+        applyCells(data.cells);
+        if (typeof data.inventoryEnabled === 'boolean') {
+            setInventoryState(data.inventory, data.inventoryEnabled);
+        }
+        checkGameEnd();
+        refreshPreview();
+    }
+
+    function handleRemoteReset() {
+        resetGrid(true, { broadcast: false });
+        refreshPreview();
+    }
+
+    function handleRemoteRestart(data) {
+        restartGame({ showConfirm: false, broadcast: false });
+        if (data && typeof data.inventoryEnabled === 'boolean') {
+            setInventoryState(data.inventory, data.inventoryEnabled);
+        }
+        refreshPreview();
+    }
+
+    function handleRemoteInventoryUpdate(data) {
+        if (!data || typeof data.inventoryEnabled !== 'boolean') {
+            return;
+        }
+        setInventoryState(data.inventory, data.inventoryEnabled);
+        refreshPreview();
+    }
+
+    function setInventoryState(newInventory, enabled) {
+        inventory = cloneInventoryState(newInventory);
+        inventoryEnabled = Boolean(enabled);
+        updateInventoryDisplay();
+        updateInventoryFormInputs(inventory);
+    }
+
+    function updateInventoryFormInputs(sourceInventory) {
+        if (!inventoryForm || !sourceInventory) {
+            return;
+        }
+        ['red', 'blue'].forEach(color => {
+            INVENTORY_KEYS.forEach(key => {
+                const input = inventoryForm.querySelector(`input[name="${color}-${key}"]`);
+                if (input) {
+                    input.value = sourceInventory[color]?.[key] ?? 0;
+                }
+            });
         });
     }
 

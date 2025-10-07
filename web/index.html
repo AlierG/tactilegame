@@ -18,6 +18,14 @@
             <button id="reset-button">清空网格</button>
             <button id="restart-button">重新开始</button>
         </div>
+        <div class="control-group realtime-controls">
+            <form id="room-form">
+                <label for="room-code">房间号：</label>
+                <input id="room-code" type="text" placeholder="如：123456" required>
+                <button type="submit">加入房间</button>
+                <span id="connection-status" aria-live="polite">未连接</span>
+            </form>
+        </div>
 
     </div>
 
@@ -65,6 +73,7 @@
         <button id="rotate-right" type="button">顺时针 ↻</button>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 
 </body>
