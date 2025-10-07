@@ -245,6 +245,7 @@ button:hover {
     background-position: center;
     opacity: 1;
     transition: opacity 0.2s ease;
+    transform-origin: center;
 }
 
 #preview-layer {
@@ -326,9 +327,25 @@ button:hover {
 
 /* 行进盲道使用纯色块并叠加细纹 */
 [class*="tile-walkway"]::after {
-    background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.2) 20%, transparent 20%, transparent 40%, rgba(255, 255, 255, 0.2) 40%, rgba(255, 255, 255, 0.2) 60%, transparent 60%, transparent 80%, rgba(255, 255, 255, 0.2) 80%);
+    background-image: linear-gradient(0deg, rgba(255, 255, 255, 0.2) 20%, transparent 20%, transparent 40%, rgba(255, 255, 255, 0.2) 40%, rgba(255, 255, 255, 0.2) 60%, transparent 60%, transparent 80%, rgba(255, 255, 255, 0.2) 80%);
     background-size: 12px 12px;
     background-color: var(--tile-color);
+}
+
+.rotation-0::after {
+    transform: rotate(0deg);
+}
+
+.rotation-90::after {
+    transform: rotate(90deg);
+}
+
+.rotation-180::after {
+    transform: rotate(180deg);
+}
+
+.rotation-270::after {
+    transform: rotate(270deg);
 }
 
 /* 提示盲道采用同心纹理 */
