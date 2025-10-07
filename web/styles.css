@@ -1,0 +1,107 @@
+/* 整体页面样式 */
+body {
+    font-family: sans-serif;
+    background-color: #f0f0f0;
+    color: #333;
+    text-align: center;
+    padding: 20px;
+}
+
+/* 控制按钮区域样式 */
+.controls {
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin: 0 10px;
+    background-color: #fff;
+}
+
+button:hover {
+    background-color: #e9e9e9;
+}
+
+/* 新增：主内容区，使用 Flex 布局让调色板和网格并排 */
+.main-content {
+    display: flex;
+    justify-content: center;
+    /* 水平居中 */
+    align-items: flex-start;
+    /* 顶部对齐 */
+    gap: 20px;
+    /* 调色板和网格之间的间距 */
+}
+
+/* 新增：左侧调色板容器样式 */
+#palette {
+    display: flex;
+    flex-direction: column;
+    /* 让工具竖向排列 */
+    gap: 10px;
+    /* 工具之间的间距 */
+}
+
+/* 新增：调色板中的单个工具样式 */
+.palette-cell {
+    width: 50px;
+    height: 50px;
+    background-size: cover;
+    border: 3px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    background-color: white;
+}
+
+/* 新增：当某个工具被选中时的样式 */
+.palette-cell.selected {
+    border-color: #007bff;
+    /* 使用蓝色高亮显示 */
+    box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+}
+
+/* 网格容器 */
+#grid-container {
+    background-image: url('background.png');
+    background-repeat: no-repeat;
+    background-size: cover;
+    width: 960px;
+    height: 640px;
+    display: grid;
+    grid-template-columns: repeat(42, 1fr);
+    grid-template-rows: repeat(28, 1fr);
+    border: 2px solid #555;
+    /* margin: 0 auto; 已被 flex 布局取代，不再需要 */
+}
+
+/* 单个网格单元 */
+.grid-cell {
+    background-color: transparent;
+    background-size: 100% 100%;
+    cursor: pointer;
+}
+
+/* 五种状态的样式 (与之前相同) */
+.state-0 {
+    background-image: url('empty.png');
+}
+
+.state-1 {
+    background-image: url('pavement.png');
+}
+
+.state-2 {
+    background-image: url('tackle_alert.png');
+}
+
+.state-3 {
+    background-image: url('tackle_heng.png');
+}
+
+.state-4 {
+    background-image: url('tackle_shu.png');
+}
