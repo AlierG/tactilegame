@@ -129,11 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let row = 0; row < GRID_ROWS; row++) {
             for (let col = 0; col < GRID_COLS; col++) {
                 const cell = document.createElement('div');
-                cell.classList.add('grid-cell', 'tile-empty', 'color-black');
+                cell.classList.add('grid-cell');
                 cell.dataset.row = row;
                 cell.dataset.col = col;
-                cell.dataset.tileId = 'empty';
-                cell.dataset.color = 'black';
+                setCellState(cell, 'empty', 'black', 0);
                 cell.addEventListener('click', handleCellClick);
                 gridContainer.appendChild(cell);
                 gridCells.push(cell);
@@ -227,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         previewLayer.innerHTML = '';
         offsets.forEach(([dx, dy]) => {
             const previewCell = document.createElement('div');
-            previewCell.classList.add('preview-cell', `tile-${tile.id}`, `color-${colorToApply}`);
+            previewCell.classList.add('preview-cell', `tile-${tile.id}`, `color-${colorToApply}`, `rotation-${rotation}`);
             if (dx === 0 && dy === 0) {
                 previewCell.classList.add('preview-anchor');
             }
@@ -263,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         gridCells.forEach(cell => {
-            setCellState(cell, 'empty', 'black');
+            setCellState(cell, 'empty', 'black', 0);
         });
         if (broadcast) {
             broadcastGridReset();
@@ -390,7 +389,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyTile(tile, baseRow, baseCol, options = {}) {
         const { rotation = currentRotation, color = currentColor } = options;
-        const offsets = getRotatedOffsets(tile.shape, rotation);
+        const normalizedRotation = getNormalizedRotation(rotation);
+        const offsets = getRotatedOffsets(tile.shape, normalizedRotation);
         const colorToApply = tile.id === 'empty' ? 'black' : color;
 
         const cells = offsets.map(([dx, dy]) => {
@@ -400,14 +400,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return gridCells[index];
         });
 
-        cells.forEach(cell => setCellState(cell, tile.id, colorToApply));
+        cells.forEach(cell => setCellState(cell, tile.id, colorToApply, normalizedRotation));
     }
 
-    function setCellState(cell, tileId, color) {
+    function setCellState(cell, tileId, color, rotation = 0) {
+        const normalizedRotation = getNormalizedRotation(rotation);
         cell.className = 'grid-cell';
-        cell.classList.add(`tile-${tileId}`, `color-${color}`);
+        cell.classList.add(`tile-${tileId}`, `color-${color}`, `rotation-${normalizedRotation}`);
         cell.dataset.tileId = tileId;
         cell.dataset.color = color;
+        cell.dataset.rotation = normalizedRotation;
     }
 
     function getRotatedOffsets(shape, rotation = currentRotation) {
@@ -438,13 +440,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!shouldBroadcast()) {
             return;
         }
-        const offsets = getRotatedOffsets(tile.shape, rotation);
+        const normalizedRotation = getNormalizedRotation(rotation);
+        const offsets = getRotatedOffsets(tile.shape, normalizedRotation);
         const colorToApply = tile.id === 'empty' ? 'black' : color;
         const cells = offsets.map(([dx, dy]) => ({
             row: baseRow + dy,
             col: baseCol + dx,
             tileId: tile.id,
             color: colorToApply,
+            rotation: normalizedRotation,
         }));
         socket.emit('placeTile', {
             roomId,
@@ -568,14 +572,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyCells(cells = []) {
         cells.forEach(cellData => {
-            const { row, col, tileId, color } = cellData;
+            const { row, col, tileId, color, rotation } = cellData;
             if (typeof row !== 'number' || typeof col !== 'number') {
                 return;
             }
             const index = row * GRID_COLS + col;
             const targetCell = gridCells[index];
             if (targetCell) {
-                setCellState(targetCell, tileId || 'empty', color || 'black');
+                const rotationToApply = typeof rotation === 'number' ? rotation : 0;
+                setCellState(targetCell, tileId || 'empty', color || 'black', rotationToApply);
             }
         });
     }
