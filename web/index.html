@@ -11,10 +11,52 @@
 <body>
 
     <h1>谁都可以用的微缩盲道迷宫设计器</h1>
-    <p>从左侧工具栏选择一个样式，然后在右侧网格上点击即可应用。如需导出请截图。</p>
+    <p>使用左侧工具箱设计桌游。先用黑色摆放得分块与障碍，再设置双方棋子数量，选择颜色并放置行进盲道与提示盲道。</p>
 
     <div class="controls">
-        <button id="reset-button">清空重置</button>
+        <div class="control-group">
+            <button id="reset-button">清空网格</button>
+            <button id="restart-button">重新开始</button>
+        </div>
+        <div class="control-group color-picker">
+            <span>当前颜色：</span>
+            <label><input type="radio" name="color" value="black" checked>黑色</label>
+            <label><input type="radio" name="color" value="red">红色</label>
+            <label><input type="radio" name="color" value="blue">蓝色</label>
+        </div>
+        <div class="control-group rotation-controls">
+            <button id="rotate-left" type="button">↺ 逆时针</button>
+            <span id="rotation-indicator">角度：0°</span>
+            <button id="rotate-right" type="button">顺时针 ↻</button>
+        </div>
+    </div>
+
+    <div class="inventory-panel">
+        <form id="inventory-form">
+            <h2>设置双方可用棋子数量</h2>
+            <div class="inventory-grid">
+                <div class="inventory-player" data-player="red">
+                    <h3>红方</h3>
+                    <label>行进盲道（1格）<input type="number" name="red-walkway-1" min="0" value="6"></label>
+                    <label>行进盲道（2格）<input type="number" name="red-walkway-2" min="0" value="6"></label>
+                    <label>行进盲道（3格）<input type="number" name="red-walkway-3" min="0" value="6"></label>
+                    <label>提示盲道（折角）<input type="number" name="red-hint-corner" min="0" value="4"></label>
+                    <label>提示盲道（T 型）<input type="number" name="red-hint-t" min="0" value="3"></label>
+                    <label>提示盲道（X 型）<input type="number" name="red-hint-x" min="0" value="2"></label>
+                </div>
+                <div class="inventory-player" data-player="blue">
+                    <h3>蓝方</h3>
+                    <label>行进盲道（1格）<input type="number" name="blue-walkway-1" min="0" value="6"></label>
+                    <label>行进盲道（2格）<input type="number" name="blue-walkway-2" min="0" value="6"></label>
+                    <label>行进盲道（3格）<input type="number" name="blue-walkway-3" min="0" value="6"></label>
+                    <label>提示盲道（折角）<input type="number" name="blue-hint-corner" min="0" value="4"></label>
+                    <label>提示盲道（T 型）<input type="number" name="blue-hint-t" min="0" value="3"></label>
+                    <label>提示盲道（X 型）<input type="number" name="blue-hint-x" min="0" value="2"></label>
+                </div>
+            </div>
+            <button type="submit">设置棋子数量并开始游戏</button>
+        </form>
+        <div id="inventory-display" aria-live="polite"></div>
     </div>
 
     <div class="main-content">
