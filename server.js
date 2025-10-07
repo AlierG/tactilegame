@@ -17,7 +17,7 @@ const io = new Server(server, {
 
 const rooms = new Map();
 
-app.use(express.static(path.join(__dirname, 'web')));
+app.use(express.static(path.join(__dirname, 'tacleweb_online')));
 
 io.on('connection', socket => {
   socket.on('joinRoom', payload => {
