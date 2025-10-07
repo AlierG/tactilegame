@@ -32,6 +32,25 @@ p {
     justify-content: center;
 }
 
+.realtime-controls form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.realtime-controls input[type="text"] {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    min-width: 140px;
+}
+
+#connection-status {
+    font-size: 14px;
+    color: #555;
+}
+
 button {
     padding: 10px 16px;
     font-size: 15px;
