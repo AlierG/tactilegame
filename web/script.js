@@ -41,12 +41,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let socket = null;
     let roomId = null;
     let connectionStatusLabel = null;
+    let roomOccupancyLabel = null;
+    let actionHistory = [];
+    let audioContext = null;
 
     // --- 获取 DOM 元素 ---
     const gridContainer = document.getElementById('grid-container');
     const paletteContainer = document.getElementById('palette');
     const resetButton = document.getElementById('reset-button');
     const restartButton = document.getElementById('restart-button');
+    const undoButton = document.getElementById('undo-button');
     const rotationIndicator = document.getElementById('rotation-indicator');
     const rotateLeftButton = document.getElementById('rotate-left');
     const rotateRightButton = document.getElementById('rotate-right');
@@ -55,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const roomForm = document.getElementById('room-form');
     const roomCodeInput = document.getElementById('room-code');
     connectionStatusLabel = document.getElementById('connection-status');
+    roomOccupancyLabel = document.getElementById('room-occupancy');
 
     // --- 初始化 ---
     createPalette();
@@ -62,10 +67,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initializePreviewLayer();
     updateRotationIndicator();
     updateInventoryDisplay();
+    updateUndoButtonState();
 
     // --- 事件绑定 ---
     resetButton.addEventListener('click', () => resetGrid());
     restartButton.addEventListener('click', () => restartGame());
+    if (undoButton) {
+        undoButton.addEventListener('click', handleUndoButtonClick);
+    }
     rotateLeftButton.addEventListener('click', () => rotate(-90));
     rotateRightButton.addEventListener('click', () => rotate(90));
 
@@ -156,6 +165,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const baseRow = parseInt(cell.dataset.row, 10);
         const baseCol = parseInt(cell.dataset.col, 10);
+        if (Number.isNaN(baseRow) || Number.isNaN(baseCol)) {
+            return;
+        }
         const rotation = getNormalizedRotation();
         const colorToApply = tile.id === 'empty' ? 'black' : currentColor;
 
@@ -164,11 +176,44 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const offsets = getRotatedOffsets(tile.shape, rotation);
+        const affectedCells = offsets.map(([dx, dy]) => {
+            const targetRow = baseRow + dy;
+            const targetCol = baseCol + dx;
+            const index = getCellIndex(targetRow, targetCol);
+            const targetCell = gridCells[index];
+            return {
+                row: targetRow,
+                col: targetCol,
+                index,
+                previous: targetCell ? readCellState(targetCell) : { tileId: 'empty', color: 'black', rotation: 0 },
+            };
+        });
+
+        const inventoryColor = currentColor;
+        const shouldRefundInventory = tile.consumesInventory && inventoryEnabled && inventoryColor !== 'black';
+
         if (!consumeInventoryIfNeeded(tile)) {
             return;
         }
 
         applyTile(tile, baseRow, baseCol, { rotation, color: colorToApply });
+        affectedCells.forEach(cellInfo => {
+            const targetCell = gridCells[cellInfo.index];
+            cellInfo.current = targetCell ? readCellState(targetCell) : { tileId: 'empty', color: 'black', rotation: 0 };
+        });
+
+        const actionRecord = {
+            cells: affectedCells.map(({ row, col, previous, current }) => ({ row, col, previous, current })),
+            inventoryRefund: shouldRefundInventory && tile.inventoryKey ? { color: inventoryColor, key: tile.inventoryKey, amount: 1 } : null,
+        };
+        actionHistory.push(actionRecord);
+        updateUndoButtonState();
+
+        if (tile.id !== 'empty') {
+            playPlacementSound();
+        }
+
         broadcastTilePlacement(tile, baseRow, baseCol, rotation, colorToApply);
         checkGameEnd();
         refreshPreview();
@@ -264,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridCells.forEach(cell => {
             setCellState(cell, 'empty', 'black', 0);
         });
+        clearActionHistory();
         if (broadcast) {
             broadcastGridReset();
         }
@@ -520,6 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         roomId = code;
         updateConnectionStatus(`正在加入房间 ${code}...`);
+        updateRoomOccupancy(null);
         socket.emit('joinRoom', { roomId: code });
     }
 
@@ -535,9 +582,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         socket.on('disconnect', () => {
             updateConnectionStatus('连接已断开');
+            updateRoomOccupancy(null);
         });
         socket.on('connect_error', () => {
             updateConnectionStatus('连接失败');
+            updateRoomOccupancy(null);
         });
         socket.on('roomState', state => {
             applyRemoteState(state);
@@ -549,6 +598,8 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('gridReset', handleRemoteReset);
         socket.on('gameRestarted', handleRemoteRestart);
         socket.on('inventoryUpdated', handleRemoteInventoryUpdate);
+        socket.on('actionUndone', handleRemoteUndo);
+        socket.on('roomOccupancy', handleRoomOccupancyUpdate);
     }
 
     function updateConnectionStatus(message) {
@@ -567,6 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof state.inventoryEnabled === 'boolean') {
             setInventoryState(state.inventory, state.inventoryEnabled);
         }
+        clearActionHistory();
         refreshPreview();
     }
 
@@ -592,6 +644,9 @@ document.addEventListener('DOMContentLoaded', () => {
         applyCells(data.cells);
         if (typeof data.inventoryEnabled === 'boolean') {
             setInventoryState(data.inventory, data.inventoryEnabled);
+        }
+        if (shouldPlayPlacementSoundForCells(data.cells)) {
+            playPlacementSound();
         }
         checkGameEnd();
         refreshPreview();
@@ -633,10 +688,194 @@ document.addEventListener('DOMContentLoaded', () => {
             INVENTORY_KEYS.forEach(key => {
                 const input = inventoryForm.querySelector(`input[name="${color}-${key}"]`);
                 if (input) {
-                    input.value = sourceInventory[color]?.[key] ?? 0;
+                    const value = sourceInventory[color] && typeof sourceInventory[color][key] !== 'undefined'
+                        ? sourceInventory[color][key]
+                        : 0;
+                    input.value = value;
                 }
             });
         });
+    }
+
+    function handleUndoButtonClick() {
+        undoLastAction();
+    }
+
+    function undoLastAction(options = {}) {
+        const { broadcast = true } = options;
+        if (actionHistory.length === 0) {
+            return;
+        }
+        const action = actionHistory.pop();
+        if (!action) {
+            return;
+        }
+
+        action.cells.forEach(cellData => {
+            const index = getCellIndex(cellData.row, cellData.col);
+            const targetCell = gridCells[index];
+            const previous = cellData.previous || { tileId: 'empty', color: 'black', rotation: 0 };
+            if (targetCell) {
+                setCellState(targetCell, previous.tileId, previous.color, previous.rotation);
+            }
+        });
+
+        if (action.inventoryRefund) {
+            const { color, key, amount } = action.inventoryRefund;
+            if (inventory[color] && typeof inventory[color][key] === 'number') {
+                inventory[color][key] += amount;
+            }
+            updateInventoryDisplay();
+        }
+
+        updateUndoButtonState();
+        refreshPreview();
+
+        if (broadcast) {
+            broadcastUndoAction(action);
+        }
+    }
+
+    function broadcastUndoAction(action) {
+        if (!shouldBroadcast()) {
+            return;
+        }
+        if (!action || !Array.isArray(action.cells)) {
+            return;
+        }
+        const cells = action.cells.map(cellData => {
+            const previous = cellData.previous || {};
+            const rotationValue = typeof previous.rotation === 'number' ? getNormalizedRotation(previous.rotation) : 0;
+            return {
+                row: cellData.row,
+                col: cellData.col,
+                tileId: previous.tileId ? previous.tileId : 'empty',
+                color: previous.color ? previous.color : 'black',
+                rotation: rotationValue,
+            };
+        });
+        socket.emit('undoAction', {
+            roomId,
+            cells,
+            inventory: cloneInventoryState(inventory),
+            inventoryEnabled,
+        });
+    }
+
+    function handleRemoteUndo(data) {
+        if (!data || !Array.isArray(data.cells)) {
+            return;
+        }
+        applyCells(data.cells);
+        if (typeof data.inventoryEnabled === 'boolean') {
+            setInventoryState(data.inventory, data.inventoryEnabled);
+        }
+        updateUndoButtonState();
+        refreshPreview();
+    }
+
+    function clearActionHistory() {
+        actionHistory = [];
+        updateUndoButtonState();
+    }
+
+    function updateUndoButtonState() {
+        if (undoButton) {
+            undoButton.disabled = actionHistory.length === 0;
+        }
+    }
+
+    function updateRoomOccupancy(count) {
+        if (!roomOccupancyLabel) {
+            return;
+        }
+        if (typeof count === 'number' && count >= 0) {
+            roomOccupancyLabel.textContent = `房间人数：${count}`;
+        } else {
+            roomOccupancyLabel.textContent = '房间人数：-';
+        }
+    }
+
+    function handleRoomOccupancyUpdate(data) {
+        if (!data || typeof data.count !== 'number') {
+            updateRoomOccupancy(null);
+            return;
+        }
+        updateRoomOccupancy(data.count);
+    }
+
+    function readCellState(cell) {
+        if (!cell) {
+            return { tileId: 'empty', color: 'black', rotation: 0 };
+        }
+        return {
+            tileId: cell.dataset.tileId || 'empty',
+            color: cell.dataset.color || 'black',
+            rotation: parseRotationValue(cell.dataset.rotation),
+        };
+    }
+
+    function parseRotationValue(value) {
+        const rotation = Number.parseInt(value, 10);
+        if (Number.isFinite(rotation)) {
+            return getNormalizedRotation(rotation);
+        }
+        return 0;
+    }
+
+    function getCellIndex(row, col) {
+        return row * GRID_COLS + col;
+    }
+
+    function playPlacementSound() {
+        const context = ensureAudioContext();
+        if (!context) {
+            return;
+        }
+        try {
+            const now = context.currentTime;
+            const duration = 0.2;
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, now);
+
+            gainNode.gain.setValueAtTime(0.0001, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.15, now + 0.02);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator.start(now);
+            oscillator.stop(now + duration);
+        } catch (error) {
+            // 忽略音频播放失败
+        }
+    }
+
+    function ensureAudioContext() {
+        if (audioContext) {
+            if (audioContext.state === 'suspended' && typeof audioContext.resume === 'function') {
+                audioContext.resume().catch(() => { });
+            }
+            return audioContext;
+        }
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            return null;
+        }
+        try {
+            audioContext = new AudioContextClass();
+        } catch (error) {
+            audioContext = null;
+        }
+        return audioContext;
+    }
+
+    function shouldPlayPlacementSoundForCells(cells) {
+        return Array.isArray(cells) && cells.some(cell => cell && cell.tileId && cell.tileId !== 'empty');
     }
 
     function checkGameEnd() {
