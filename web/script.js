@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { id: 'walkway-1', name: '行进盲道（1 格）', label: '行1', shape: [[0, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-1' },
         { id: 'walkway-2', name: '行进盲道（2 格）', label: '行2', shape: [[0, 0], [1, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-2' },
         { id: 'walkway-3', name: '行进盲道（3 格）', label: '行3', shape: [[0, 0], [1, 0], [2, 0]], category: 'walkway', consumesInventory: true, inventoryKey: 'walkway-3' },
-        { id: 'hint-corner', name: '提示盲道（折角，3 格）', label: 'L', shape: [[0, 0], [1, 0], [0, 1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-corner' },
+        { id: 'hint-corner', name: '提示盲道（L 型，3 格）', label: 'L', shape: [[0, 0], [1, 0], [0, 1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-corner' },
         { id: 'hint-t', name: '提示盲道（T 型，4 格）', label: 'T', shape: [[0, 0], [-1, 0], [1, 0], [0, 1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-t' },
         { id: 'hint-x', name: '提示盲道（X 型，5 格）', label: 'X', shape: [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]], category: 'hint', consumesInventory: true, inventoryKey: 'hint-x' },
     ];
@@ -344,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'walkway-1': return '行进盲道（1 格）';
             case 'walkway-2': return '行进盲道（2 格）';
             case 'walkway-3': return '行进盲道（3 格）';
-            case 'hint-corner': return '提示盲道（折角）';
+            case 'hint-corner': return '提示盲道（L 型）';
             case 'hint-t': return '提示盲道（T 型）';
             case 'hint-x': return '提示盲道（X 型）';
             default: return key;
