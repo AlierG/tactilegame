@@ -20,14 +20,21 @@ const rooms = new Map();
 app.use(express.static(path.join(__dirname, 'tacleweb_online')));
 
 io.on('connection', socket => {
-  socket.on('joinRoom', payload => {
+  socket.on('joinRoom', async payload => {
     const roomId = normalizeRoomId(payload?.roomId);
     if (!roomId) {
       return;
     }
-    socket.join(roomId);
+    const previousRoom = socket.data.roomId;
+    if (previousRoom && previousRoom !== roomId) {
+      await socket.leave(previousRoom);
+      emitRoomOccupancy(previousRoom);
+    }
+    await socket.join(roomId);
+    socket.data.roomId = roomId;
     const room = getOrCreateRoom(roomId);
     socket.emit('roomState', cloneRoomState(room.state));
+    emitRoomOccupancy(roomId);
   });
 
   socket.on('placeTile', payload => {
@@ -86,6 +93,32 @@ io.on('connection', socket => {
       inventoryEnabled: room.state.inventoryEnabled,
     });
   });
+
+  socket.on('undoAction', payload => {
+    const roomId = normalizeRoomId(payload?.roomId);
+    const room = getRoom(roomId);
+    if (!room || !Array.isArray(payload?.cells)) {
+      return;
+    }
+    updateRoomGrid(room.state, payload.cells);
+    if (typeof payload.inventoryEnabled === 'boolean' && payload.inventory) {
+      room.state.inventory = sanitizeInventory(payload.inventory);
+      room.state.inventoryEnabled = payload.inventoryEnabled;
+    }
+    socket.to(roomId).emit('actionUndone', {
+      cells: payload.cells,
+      inventory: cloneInventory(room.state.inventory),
+      inventoryEnabled: room.state.inventoryEnabled,
+    });
+  });
+
+  socket.on('disconnect', () => {
+    const previousRoom = socket.data.roomId;
+    if (previousRoom) {
+      setTimeout(() => emitRoomOccupancy(previousRoom), 0);
+    }
+    socket.data.roomId = null;
+  });
 });
 
 function getOrCreateRoom(roomId) {
@@ -123,7 +156,7 @@ function createDefaultGrid() {
   const grid = [];
   for (let row = 0; row < GRID_ROWS; row += 1) {
     for (let col = 0; col < GRID_COLS; col += 1) {
-      grid.push({ row, col, tileId: 'empty', color: 'black' });
+      grid.push({ row, col, tileId: 'empty', color: 'black', rotation: 0 });
     }
   }
   return grid;
@@ -169,7 +202,8 @@ function updateRoomGrid(state, cells) {
     const index = row * GRID_COLS + col;
     const tileId = typeof cell.tileId === 'string' ? cell.tileId : 'empty';
     const color = typeof cell.color === 'string' ? cell.color : 'black';
-    state.grid[index] = { row, col, tileId, color };
+    const rotation = normalizeRotation(cell.rotation);
+    state.grid[index] = { row, col, tileId, color, rotation };
   });
 }
 
@@ -183,6 +217,27 @@ function cloneRoomState(state) {
     inventory: cloneInventory(state?.inventory),
     inventoryEnabled: Boolean(state?.inventoryEnabled),
   };
+}
+
+function normalizeRotation(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) {
+    return 0;
+  }
+  let normalized = raw % 360;
+  if (normalized < 0) {
+    normalized += 360;
+  }
+  return Math.round(normalized / 90) * 90;
+}
+
+function emitRoomOccupancy(roomId) {
+  if (!roomId) {
+    return;
+  }
+  const room = io.sockets.adapter.rooms.get(roomId);
+  const count = room ? room.size : 0;
+  io.to(roomId).emit('roomOccupancy', { roomId, count });
 }
 
 const PORT = process.env.PORT || 3000;
